@@ -1,7 +1,8 @@
 const PROTO_PATH = "./zbprotocol.proto";
 
-var grpc = require("grpc");
-var protoLoader = require("@grpc/proto-loader");
+const grpc = require("grpc");
+const protoLoader = require("@grpc/proto-loader");
+const {PaginationHandler, dataPairsToMap} = require("./pagination")
 
 var packageDefinition = protoLoader.loadSync(PROTO_PATH, {
     keepCase: true,
@@ -17,6 +18,8 @@ var zbprotocol = protoDescriptor.zbprotocol;
 class ZetabaseClient {
     constructor(){
         this.url = 'api.zetabase.io:443';
+        this.uid = undefined;
+        this.parentUid = undefined;
     }
 
     connectRootWithPassword(handle, pass) {
@@ -24,18 +27,108 @@ class ZetabaseClient {
         this.pass = pass;
         this.client = new zbprotocol.ZetabaseProvider(this.url, grpc.credentials.createSsl());
         let reqDat = {handle: handle, password: pass};
+        let self = this;
         return new Promise((resolv, reject) => {
-            this.client.LoginUser(reqDat, function(err,res){
+            self.client.LoginUser(reqDat, function(err,res){
                 if(err){
-                    console.log(`err: ${JSON.stringify(err)}`)
                     reject(err)
                 } else {
-                    console.log(`Result: ${JSON.stringify(res)}`)
+                    self.uid = res.id;
+                    self.jwtToken = res.jwtToken;
+                    self.handle = handle;
+                    self.passwordUsed = pass;
                     resolv(res)
                 }
             })
         })
     }
+
+    authenticated() {
+        return (!!this.jwtToken);
+    }
+
+    checkReady() {
+        if((!this.uid) || (!this.client) || (!this.authenticated())) {
+            return false;
+        }
+        return true; 
+    }
+
+    getNonce(){
+        return (new Date()).getTime() * 1000;
+    }
+
+    getAuth(nonce) {
+        if(!!this.jwtToken) {
+            return {credType: "JWT_TOKEN", jwtToken: this.jwtToken}
+        }
+        return undefined;
+    }
+
+    getKey(table, key, asTypeOpt) {
+        let owner = this.parentUid ? (!!this.parentUid) : this.uid;
+        let returnJson = (asTypeOpt.toLowerCase() == "json")
+        let nonce = this.getNonce()
+        let auth = this.getAuth(nonce)
+        return new Promise((resolv, reject) => {
+            this.client.GetData({id: this.uid, tableId: table, tableOwnerId: owner, credential: auth, nonce: nonce, pageIndex: 0, keys: [key]}, function(err,res){
+                if(err){
+                    reject(err)
+                } else {
+                    if(!res.data[0].value) {
+                        resolv(undefined)
+                    } else if(!returnJson){
+                        resolv(res.data[0])
+                    } else {
+                        resolv(JSON.parse(res.data[0].value))
+                    }
+                }
+            })
+        })
+    }
+
+
+    getKeys(table, keys, asTypeOpt) {
+        let self = this;
+        let getFn = (async (pgIdx) => {
+            return self.getKeysPage(table, keys, asTypeOpt, pgIdx)
+        });
+        return new PaginationHandler(getFn);
+    }
+
+    getKeysPage(table, keys, asTypeOpt, pageIndexOpt) {
+        let owner = this.parentUid ? (!!this.parentUid) : this.uid;
+        let returnJson = (asTypeOpt.toLowerCase() == "json")
+        let nonce = this.getNonce()
+        let auth = this.getAuth(nonce)
+        let page = pageIndexOpt;
+        return new Promise((resolv, reject) => {
+            this.client.GetData({id: this.uid, tableId: table, tableOwnerId: owner, credential: auth, nonce: nonce, pageIndex: page, keys: keys}, function(err,res){
+                if(err){
+                    reject(err)
+                } else {
+                    // console.log("res: ", res)
+                    let hasNext = res.pagination.hasNextPage;
+                    let nextPage = res.pagination.nextPageIndex;
+                    if(!returnJson){
+                        // resolv(res.data)
+                        resolv({data: dataPairsToMap(res.data), hasNext: hasNext, nextPage: nextPage});
+                    } else {
+                        let kvPairs = res.data.map((x) => {
+                            if(x.value){
+                                return {key: x.key, value: JSON.parse(x.value)}
+                            }
+                            return x;
+                        })
+                        // resolv(kvPairs)
+                        resolv({data: dataPairsToMap(kvPairs), hasNext: hasNext, nextPage: nextPage});
+                    }
+                }
+            })
+        })
+    }
+
+
 
     toString(){
         return `ZB client for ${this.handle}`
