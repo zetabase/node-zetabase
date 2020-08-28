@@ -58,7 +58,7 @@ class ZetabaseClient {
         return (new Date()).getTime() * 1000;
     }
 
-    getAuth(nonce) {
+    getAuth(nonce, xb) {
         if(!!this.jwtToken) {
             return {credType: "JWT_TOKEN", jwtToken: this.jwtToken}
         }
@@ -76,7 +76,7 @@ class ZetabaseClient {
     listKeysPage(table, patternOpt, pageIndexOpt) {
         let owner = this.parentUid ?? this.uid;
         let nonce = this.getNonce()
-        let auth = this.getAuth(nonce)
+        let auth = this.getAuth(nonce, "")
         let page = pageIndexOpt ?? 0;
         let pat = patternOpt ?? "";
 
@@ -96,7 +96,7 @@ class ZetabaseClient {
     async listTables() {
         let owner = this.parentUid ?? this.uid;
         let nonce = this.getNonce()
-        let auth = this.getAuth(nonce)
+        let auth = this.getAuth(nonce, "")
         let req = {id: this.uid, tableOwnerId:owner, nonce:nonce, credential:auth};
         // console.log(req) 
         return new Promise((resolve, reject) => {
@@ -109,11 +109,44 @@ class ZetabaseClient {
             })
         })
     }
+    
+    putMulti(table, keys, values) {
+        if (keys.length != values.length) {
+            throw new Error('ImproperDimensions')
+        }
+        
+        let owner = this.parentUid ?? this.uid;
+        let nonce = this.getNonce()
+        let auth = this.getAuth(nonce, "")
+
+        
+        let dps = []
+        var i
+        for (i = 0; i < keys.length; i++) {
+            let value = values[i]
+            if(typeof(value) == "string") {
+                value = new TextEncoder("utf-8").encode(value)
+            } 
+            dps.push({key: keys[i], value: value})
+        }
+        
+        let req = {id: this.uid, tableOwnerId: owner, tableId: table, overwrite: false, nonce: nonce, credential: auth, pairs: dps} 
+    
+        return new Promise((resolve, reject) => {
+            return this.client.PutDataMulti(req, (err, res) => {
+                if (!!err) {
+                    reject(err)
+                } else {
+                    resolve(true);
+                }
+            })
+        })
+    }
 
     put(table, key, valu, doOverwriteOpt) {
         let owner = this.parentUid ?? this.uid;
         let nonce = this.getNonce()
-        let auth = this.getAuth(nonce)
+        let auth = this.getAuth(nonce, "")
         let ovr = doOverwriteOpt;
         let v = undefined;
         if(typeof(valu) == 'string') {
@@ -137,7 +170,7 @@ class ZetabaseClient {
         let owner = this.parentUid ? (!!this.parentUid) : this.uid;
         let returnJson = (!!asTypeOpt) ? (asTypeOpt.toLowerCase() == "json") : false;
         let nonce = this.getNonce()
-        let auth = this.getAuth(nonce)
+        let auth = this.getAuth(nonce, "")
         return new Promise((resolv, reject) => {
             this.client.GetData({id: this.uid, tableId: table, tableOwnerId: owner, credential: auth, nonce: nonce, pageIndex: 0, keys: [key]}, function(err,res){
                 if(err){
@@ -155,6 +188,22 @@ class ZetabaseClient {
         })
     }
 
+    deleteKey(table, key) {
+        let nonce = this.getNonce()
+        let owner = this.parentUid ? (!!this.parentUid) : this.uid;
+        let poc = this.getAuth(nonce, "")
+        let req = {nonce: nonce, tableOwnerId: owner, tableId: table, objectId: key, objectType: "KEY", credential: poc, id: this.uid} 
+
+        return new Promise((resolve, reject) => {
+            return this.client.DeleteObject(req, (err, res) => {
+                if (!!err) {
+                    reject(err)
+                } else {
+                    resolve(res)
+                }
+            })
+        })
+    }
 
     getKeys(table, keys, asTypeOpt) {
         let self = this;
@@ -168,7 +217,7 @@ class ZetabaseClient {
         let owner = this.parentUid ? (!!this.parentUid) : this.uid;
         let returnJson = (!!asTypeOpt) ? (asTypeOpt.toLowerCase() == "json") : false;
         let nonce = this.getNonce()
-        let auth = this.getAuth(nonce)
+        let auth = this.getAuth(nonce, "")
         let page = pageIndexOpt;
         return new Promise((resolv, reject) => {
             this.client.GetData({id: this.uid, tableId: table, tableOwnerId: owner, credential: auth, nonce: nonce, pageIndex: page, keys: keys}, function(err,res){
@@ -200,7 +249,7 @@ class ZetabaseClient {
         let owner = this.parentUid ? (!!this.parentUid) : this.uid;
         let returnJson = (!!asTypeOpt) ? (asTypeOpt.toLowerCase() == "json") : false;
         let nonce = this.getNonce()
-        let auth = this.getAuth(nonce)
+        let auth = this.getAuth(nonce, "")
         let page = pageIndexOpt ?? 0;
         let req = {id: this.uid, tableId: table, tableOwnerId: owner, credential: auth, nonce: nonce, pageIndex: page, query: query.toSubQuery()};
         // console.log(req)
@@ -233,7 +282,7 @@ class ZetabaseClient {
     queryKeysPage(table, query, pageIndexOpt) {
         let owner = this.parentUid ? (!!this.parentUid) : this.uid;
         let nonce = this.getNonce()
-        let auth = this.getAuth(nonce)
+        let auth = this.getAuth(nonce, "")
         let page = pageIndexOpt ?? 0;
         let req = {id: this.uid, tableId: table, tableOwnerId: owner, credential: auth, nonce: nonce, pageIndex: page, query: query.toSubQuery()};
         // console.log(req)
