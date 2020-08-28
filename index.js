@@ -230,9 +230,8 @@ class ZetabaseClient {
             })
         })
     }
-    queryKeysPage(table, query, asTypeOpt, pageIndexOpt) {
+    queryKeysPage(table, query, pageIndexOpt) {
         let owner = this.parentUid ? (!!this.parentUid) : this.uid;
-        let returnJson = (!!asTypeOpt) ? (asTypeOpt.toLowerCase() == "json") : false;
         let nonce = this.getNonce()
         let auth = this.getAuth(nonce)
         let page = pageIndexOpt ?? 0;
@@ -247,29 +246,25 @@ class ZetabaseClient {
                     // console.log(res)
                     let hasNext = res.pagination.hasNextPage;
                     let nextPage = res.pagination.nextPageIndex;
-                    if(!returnJson){
-                        // resolv(res.data)
-                        resolv({data: dataPairsToMap(res.data), hasNext: hasNext, nextPage: nextPage});
-                    } else {
-                        let kvPairs = res.data.map((x) => {
-                            if(x.value){
-                                return {key: x.key, value: JSON.parse(x.value)}
-                            }
-                            return x;
-                        })
-                        // resolv(kvPairs)
-                        resolv({data: dataPairsToMap(kvPairs), hasNext: hasNext, nextPage: nextPage});
-                    }
+                    resolv({data: res.keys, hasNext: hasNext, nextPage: nextPage});
                 }
             })
         })
     }
 
-
     query(table, query, asTypeOpt) {
         let self = this;
         let getFn = (async (pgIdx) => {
-            return self.queryKeysPage(table, keys, asTypeOpt, pgIdx)
+            return self.queryDataPage(table, query, asTypeOpt, pgIdx)
+        });
+        return new PaginationHandler(getFn);
+    }
+
+
+    queryKeys(table, query) {
+        let self = this;
+        let getFn = (async (pgIdx) => {
+            return self.queryKeysPage(table, query, pgIdx)
         });
         return new PaginationHandler(getFn);
     }
