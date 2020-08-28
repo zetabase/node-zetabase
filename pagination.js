@@ -26,7 +26,7 @@ class PaginationHandler {
     next() {
         // console.log(`next on page ${this.currentPage}`)
         return this.getFn(this.currentPage+1).then((res) => {
-            // console.log(`data on page ${this.currentPage} - ${res}`)
+            // console.log(`data on page ${this.currentPage} - `, res)
             this.currentPage += 1;
             this.hasNextPage = res.hasNext;
             if(isArray(res.data)) {
